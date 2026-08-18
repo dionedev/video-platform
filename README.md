@@ -20,7 +20,7 @@ Plataforma de streaming de vídeo inspirada na arquitetura do YouTube, construí
 
 ### Motivação
 
-Este projeto reproduz, em escala de MVP, os princípios arquiteturais de uma plataforma de vídeo de grande porte. O objetivo é dominar, na prática, os problemas que uma plataforma dessas resolve e as decisões de engenharia por trás de cada solução: por que arquivos grandes não podem passar pela API, por que metadados e binários vivem em lugares diferentes, por que a transcodificação é assíncrona e como o streaming adaptativo funciona de ponta a ponta.
+Este projeto reproduz, em escala de MVP, os princípios arquiteturais de uma plataforma de vídeo de grande porte. O objetivo não é clonar o YouTube — é dominar, na prática, os problemas que uma plataforma dessas resolve e as decisões de engenharia por trás de cada solução: por que arquivos grandes não podem passar pela API, por que metadados e binários vivem em lugares diferentes, por que a transcodificação é assíncrona e como o streaming adaptativo funciona de ponta a ponta.
 
 ### O problema central
 
@@ -38,9 +38,34 @@ Uma API tradicional que recebe arquivos de vídeo no corpo da requisição colap
 
 ## Arquitetura
 
-### Streaming adaptativo (ABR)
+### Fluxo completo: do upload à reprodução
 
-O player (hls.js) consome o manifest, mede continuamente a banda disponível e alterna dinamicamente entre as resoluções geradas pelo worker — priorizando reprodução fluida sem congelamentos em vez de resolução máxima constante.
+#### Fase 1 — Upload
+
+1. O usuário autentica na plataforma e seleciona um arquivo de vídeo na sua máquina.
+2. O frontend envia à API apenas os **metadados** do vídeo (título, descrição, nome e tamanho do arquivo) via `POST /videos` — o arquivo em si ainda não sai da máquina do usuário.
+3. A API registra o vídeo no banco de dados com status **`pending`**.
+4. A API solicita ao S3 o início de um **upload multipart** e gera uma lista de **presigned URLs** — a quantidade de URLs é proporcional ao tamanho do arquivo declarado.
+5. A API responde ao frontend com as presigned URLs.
+6. O frontend fatia o arquivo em **chunks de 5–10 MB** no próprio navegador e envia cada chunk **diretamente ao S3**, usando as presigned URLs — os bytes do vídeo nunca passam pelo servidor da API.
+7. Com todos os chunks enviados, o frontend notifica a API de que o upload terminou.
+8. A API confirma a conclusão ao S3, que **reagrupa os chunks em um único arquivo**.
+
+#### Fase 2 — Processamento
+
+9. A API publica uma mensagem na fila (SQS) informando que há um novo vídeo a processar e atualiza o status para **`processing`**.
+10. O worker consome a mensagem da fila e baixa o arquivo original do S3.
+11. O worker transcodifica o vídeo em **múltiplas resoluções** (por exemplo, 1080p, 720p, 480p) usando FFmpeg.
+12. Cada resolução é fatiada em **segmentos curtos** (2–6 segundos) e o worker gera o **manifest HLS** (`.m3u8`) — o índice que descreve todas as resoluções e segmentos disponíveis.
+13. O worker publica os segmentos e o manifest no S3 e atualiza o status do vídeo para **`ready`** (ou **`error`**, se alguma etapa falhar).
+
+#### Fase 3 — Streaming
+
+14. Qualquer usuário abre o vídeo na plataforma; o player solicita o **manifest** via CDN (CloudFront), que serve o conteúdo a partir da localidade de borda mais próxima.
+15. O player lê o manifest, mede continuamente a **banda disponível** e baixa os segmentos na resolução mais adequada ao momento.
+16. Se a conexão piora ou melhora durante a reprodução, o player **troca de resolução dinamicamente** entre um segmento e outro — priorizando reprodução fluida, sem congelamentos (streaming adaptativo, ABR).
+
+> Em resumo: a API orquestra, mas nunca transporta vídeo; o S3 guarda os arquivos; a fila desacopla o processamento; o worker prepara o vídeo para streaming; e a CDN entrega ao mundo.
 
 ### Escala de referência vs. escala do projeto
 
