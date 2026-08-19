@@ -141,7 +141,7 @@ Esta tabela é atualizada ao final de cada milestone.
 | Milestone         | Escopo no backend                                                     | Status    |
 | ----------------- | --------------------------------------------------------------------- | --------- |
 | M1 — Fundação     | TypeScript strict, Fastify, env fail-fast, `app.ts`/`server.ts`       | Concluído |
-| M2 — Banco        | Neon + Prisma, schemas `users` e `videos` com ciclo de vida de status | Planejado |
+| M2 — Banco        | Neon + Prisma, schemas `users` e `videos` com ciclo de vida de status | Concluído |
 | M3 — Autenticação | Register/login, JWT + refresh rotativo, primeiras camadas Clean       | Planejado |
 | M4 — Upload       | Multipart S3 com presigned URLs, confirmação, enfileiramento SQS      | Planejado |
 | M5 — Worker       | Integração de contratos compartilhados com o worker                   | Planejado |
